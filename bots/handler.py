@@ -1,12 +1,17 @@
-import json
-import requests
+"""
+bot/handler.py
+
+Handles incoming Telegram updates.
+"""
+
+from bot.response import build_response
+from services.logger import logger
 from services.telegram_service import send_message
 
-from config import Config
 
 async def handle_update(update: dict):
     """
-    Process incoming Telegram update.
+    Process an incoming Telegram update.
     """
 
     try:
@@ -19,30 +24,50 @@ async def handle_update(update: dict):
         chat_id = message["chat"]["id"]
         text = message.get("text", "")
 
-        print(f"Received message: {text}")
+        # Start a fresh log for this request
+        logger.clear()
 
-        # Temporary response
-        response = {
-            "answer": "Bot is working!",
-            "log_url": ""
-        }
+        # Log the incoming message
+        logger.log_request(
+            message=text,
+            chat_id=chat_id
+        )
 
-        send_message(chat_id, response)
+        # ------------------------------------------------------------------
+        # TODO:
+        # Later we will:
+        # 1. Save conversation memory
+        # 2. Call Gemini
+        # 3. Download datasets
+        # 4. Analyze data
+        # ------------------------------------------------------------------
+
+        answer = "Bot is working!"
+
+        response = build_response(
+            answer=answer,
+            log_url=""
+        )
+
+        logger.log_response(response)
+
+        send_message(
+            chat_id=chat_id,
+            message=response
+        )
 
     except Exception as e:
-        print(f"Handler Error: {e}")
+        logger.log_exception(e)
 
+        error_response = build_response(
+            answer="Internal Server Error",
+            log_url=""
+        )
 
-def send_message(chat_id: int, response: dict):
-    """
-    Send message back to Telegram.
-    """
-
-    url = f"https://api.telegram.org/bot{Config.BOT_TOKEN}/sendMessage"
-
-    payload = {
-        "chat_id": chat_id,
-        "text": json.dumps(response)
-    }
-
-    requests.post(url, json=payload)
+        try:
+            send_message(
+                chat_id=chat_id,
+                message=error_response
+            )
+        except Exception:
+            pass
