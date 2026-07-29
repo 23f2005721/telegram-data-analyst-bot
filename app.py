@@ -2,12 +2,16 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 
 from bot.handler import handle_update
+from fastapi.staticfiles import StaticFiles
+
+
 
 app = FastAPI(
     title="Telegram Data Analyst Bot",
     version="1.0.0"
 )
 
+app.mount("/logs", StaticFiles(directory="logs"), name="logs")
 
 @app.get("/")
 async def root():
