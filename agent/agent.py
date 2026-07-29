@@ -4,7 +4,7 @@ Main AI Agent.
 
 from agent.prompts import SYSTEM_PROMPT
 from agent.planner import planner
-
+from agent.executor import executor
 from services.gemini_service import gemini
 from services.logger import logger
 
@@ -25,10 +25,11 @@ class DataAnalystAgent:
             plan=plan
         )
 
-        answer = await gemini.generate(
-            prompt=question,
-            system_prompt=SYSTEM_PROMPT
+        answer = await executor.execute(
+            question,
+            plan,
         )
+
 
         logger.log(
             "agent_finished",
