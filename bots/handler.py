@@ -4,7 +4,6 @@ from services.telegram_service import send_message
 
 from config import Config
 
-
 async def handle_update(update: dict):
     """
     Process incoming Telegram update.
