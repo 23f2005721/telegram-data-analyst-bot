@@ -1,5 +1,6 @@
 import json
 import requests
+from services.telegram_service import send_message
 
 from config import Config
 
