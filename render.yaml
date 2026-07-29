@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: telegram-data-analyst-bot
+
+    env: docker
+
+    plan: free
+
+    autoDeploy: true
+
+    healthCheckPath: /
+
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+
+      - key: GEMINI_API_KEY
+        sync: false
+
+      - key: ENV
+        value: production
+
+      - key: LOG_FILE
+        value: logs/run.jsonl
