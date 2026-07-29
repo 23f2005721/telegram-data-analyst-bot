@@ -7,6 +7,7 @@ Handles incoming Telegram updates.
 from bot.response import build_response
 from services.logger import logger
 from services.telegram_service import send_message
+from services.storage import storage
 
 
 async def handle_update(update: dict):
@@ -42,13 +43,11 @@ async def handle_update(update: dict):
         # 4. Analyze data
         # ------------------------------------------------------------------
 
-        answer = "Bot is working!"
 
         response = build_response(
             answer=answer,
-            log_url=""
+            log_url=storage.get_public_log_url()
         )
-
         logger.log_response(response)
 
         send_message(
