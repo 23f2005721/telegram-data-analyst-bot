@@ -1,126 +1,153 @@
 """
-agent/executor.py
+executor.py
 
-Executes the plan created by the planner.
+Main execution pipeline.
+
+Responsibilities:
+- Parse question
+- Restore memory
+- Search/download dataset
+- Load dataset
+- Execute dataframe operations
+- Use Gemini only when required
+- Format final JSON response
 """
 
-from __future__ import annotations
-
-import re
 from pathlib import Path
 
-from services.gemini_service import gemini
-from services.logger import logger
+from agent.parser import Parser
+from agent.formatter import Formatter
+from agent.memory import Memory
 
-from tools.downloader import downloader
-from tools.csv_tool import csv_tool
+from services.search_service import SearchService
+from services.gemini_service import GeminiService
 
-from agent.prompts import SYSTEM_PROMPT
+from tools.downloader import Downloader
+from tools.loader_factory import LoaderFactory
+from tools.dataframe import DataFrameTool
 
 
 class Executor:
 
-    URL_PATTERN = r"https?://[^\s]+"
+    def __init__(self):
 
-    # ---------------------------------------------------------
-    # Execute
-    # ---------------------------------------------------------
+        self.parser = Parser()
+        self.memory = Memory()
 
-    async def execute(
-        self,
-        question: str,
-        plan: dict,
-    ) -> str:
+        self.search = SearchService()
 
-        logger.log(
-            "executor_started",
-            question=question
-        )
+        self.downloader = Downloader()
+        self.loader = LoaderFactory()
 
-        url = self.extract_url(question)
+        self.dataframe = DataFrameTool()
 
-        # ------------------------------
-        # Pure reasoning
-        # ------------------------------
+        self.gemini = GeminiService()
 
-        if url is None:
+        self.formatter = Formatter()
 
-            logger.log(
-                "reasoning_only"
+    async def execute(self, question: str):
+
+        try:
+
+            # -----------------------------
+            # Parse Question
+            # -----------------------------
+
+            task = self.parser.parse(question)
+
+            # -----------------------------
+            # Recover previous dataset
+            # -----------------------------
+
+            dataframe = self.memory.get_dataframe()
+
+            # -----------------------------
+            # Download dataset if URL exists
+            # -----------------------------
+
+            if task.url:
+
+                filepath = await self.downloader.download(task.url)
+
+                dataframe = self.loader.load(filepath)
+
+                self.memory.save_dataframe(dataframe)
+
+            # -----------------------------
+            # Search dataset if needed
+            # -----------------------------
+
+            elif dataframe is None:
+
+                result = self.search.search(question)
+
+                if result["url"]:
+
+                    filepath = await self.downloader.download(
+                        result["url"]
+                    )
+
+                    dataframe = self.loader.load(filepath)
+
+                    self.memory.save_dataframe(dataframe)
+
+            # -----------------------------
+            # Still no dataframe
+            # -----------------------------
+
+            if dataframe is None:
+
+                if task.requires_llm:
+
+                    answer = await self.gemini.generate(question)
+
+                    return self.formatter.success(
+                        {
+                            "answer": answer
+                        }
+                    )
+
+                return self.formatter.error(
+                    "No dataset available."
+                )
+
+            # -----------------------------
+            # Execute dataframe operation
+            # -----------------------------
+
+            result = self.run_dataframe_operation(
+                dataframe,
+                task
             )
 
-            return await gemini.generate(
-                prompt=question,
-                system_prompt=SYSTEM_PROMPT,
-            )
+            return self.formatter.success(result)
 
-        # ------------------------------
-        # Download
-        # ------------------------------
+        except Exception as e:
 
-        path = downloader.download(url)
+            return self.formatter.error(str(e))
 
-        file_type = downloader.file_type(path)
+    def run_dataframe_operation(self, df, task):
 
-        logger.log(
-            "file_detected",
-            file_type=file_type,
-            path=str(path)
+        operation = task.operation
+
+        if operation == "mean":
+            return self.dataframe.mean(df, task.column)
+
+        if operation == "median":
+            return self.dataframe.median(df, task.column)
+
+        if operation == "sum":
+            return self.dataframe.sum(df, task.column)
+
+        if operation == "count":
+            return self.dataframe.count(df)
+
+        if operation == "max":
+            return self.dataframe.maximum(df, task.column)
+
+        if operation == "min":
+            return self.dataframe.minimum(df, task.column)
+
+        raise ValueError(
+            f"Unsupported operation: {operation}"
         )
-
-        # ------------------------------
-        # CSV
-        # ------------------------------
-
-        if file_type == "csv":
-
-            df = csv_tool.read(path)
-
-            summary = csv_tool.info(df)
-
-            prompt = f"""
-Dataset Information
-
-{summary}
-
-User Question
-
-{question}
-
-Answer the user's question using the dataset information.
-"""
-
-            return await gemini.generate(
-                prompt=prompt,
-                system_prompt=SYSTEM_PROMPT,
-            )
-
-        # ------------------------------
-        # Unsupported
-        # ------------------------------
-
-        return (
-            f"Unsupported file type: {file_type}"
-        )
-
-    # ---------------------------------------------------------
-    # Extract URL
-    # ---------------------------------------------------------
-
-    def extract_url(
-        self,
-        text: str,
-    ) -> str | None:
-
-        match = re.search(
-            self.URL_PATTERN,
-            text,
-        )
-
-        if match:
-            return match.group()
-
-        return None
-
-
-executor = Executor()
