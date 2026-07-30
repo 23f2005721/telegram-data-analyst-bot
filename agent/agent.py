@@ -1,42 +1,16 @@
 """
-Main AI Agent.
+Agent entry point.
 """
 
-from agent.prompts import SYSTEM_PROMPT
-from agent.planner import planner
-from agent.executor import executor
-from services.gemini_service import gemini
-from services.logger import logger
+from agent.executor import Executor
 
 
-class DataAnalystAgent:
+class Agent:
 
-    async def solve(self, question: str):
+    def __init__(self):
 
-        logger.log(
-            "planning_started",
-            question=question
-        )
+        self.executor = Executor()
 
-        plan = planner.create_plan(question)
+    async def handle(self, question: str):
 
-        logger.log(
-            "plan_created",
-            plan=plan
-        )
-
-        answer = await executor.execute(
-            question,
-            plan,
-        )
-
-
-        logger.log(
-            "agent_finished",
-            answer=answer
-        )
-
-        return answer
-
-
-agent = DataAnalystAgent()
+        return await self.executor.execute(question)
