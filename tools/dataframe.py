@@ -7,6 +7,7 @@ All dataframe operations should live here.
 """
 
 from typing import Any, Dict
+from difflib import get_close_matches
 
 import pandas as pd
 
@@ -17,19 +18,37 @@ class DataFrameTool:
     # Basic Statistics
     # =====================================================
 
-    def mean(self, df: pd.DataFrame, column: str) -> Dict[str, Any]:
+    def mean(self, df, column):
+
+        column = self.match_column(df, column)
+
+        if column is None:
+            raise ValueError("Column not found")
+
         return {
-            column: float(df[column].mean())
+            "mean": float(df[column].mean())
         }
 
-    def median(self, df: pd.DataFrame, column: str) -> Dict[str, Any]:
+    def median(self, df, column):
+
+        column = self.match_column(df, column)
+
+        if column is None:
+            raise ValueError("Column not found")
+
         return {
-            column: float(df[column].median())
+            "median": float(df[column].median())
         }
 
-    def sum(self, df: pd.DataFrame, column: str) -> Dict[str, Any]:
+    def sum(self, df, column):
+
+        column = self.match_column(df, column)
+
+        if column is None:
+            raise ValueError("Column not found")
+
         return {
-            column: float(df[column].sum())
+            "sum": float(df[column].sum())
         }
 
     def count(self, df: pd.DataFrame) -> Dict[str, Any]:
@@ -37,14 +56,56 @@ class DataFrameTool:
             "count": int(len(df))
         }
 
-    def maximum(self, df: pd.DataFrame, column: str) -> Dict[str, Any]:
+    def maximum(
+        self,
+        df,
+        column,
+        result_column=None
+    ):
+        column = self.match_column(df, column)
+
+        if column is None:
+            raise ValueError("Column not found")
+
+            row = df.loc[df[column].idxmax()]
+
+        if result_column:
+
+            result_column = self.match_column(df, result_column)
+
+            if result_column:
+                return {
+                    result_column: row[result_column]
+                }
+
         return {
-            column: df[column].max()
+            column: row[column]
         }
 
-    def minimum(self, df: pd.DataFrame, column: str) -> Dict[str, Any]:
+    def minimum(
+        self,
+        df,
+        column,
+        result_column=None
+    ):
+        column = self.match_column(df, column)
+
+        if column is None:
+            raise ValueError("Column not found")
+
+        row = df.loc[df[column].idxmin()]
+
+        if result_column:
+
+            result_column = self.match_column(df, result_column)
+
+            if result_column:
+                return {
+                    result_column: row[result_column]
+                }
+
         return {
-            column: df[column].min()
+            column: row[column]
         }
 
     # =====================================================
@@ -195,3 +256,70 @@ class DataFrameTool:
     ):
 
         return df.loc[df[column].idxmin()].to_dict()
+    
+    
+    def match_column(self, df, column):
+
+        if column is None:
+            return None
+
+    # Exact match
+        if column in df.columns:
+            return column
+
+    # Case-insensitive match
+        for col in df.columns:
+            if col.lower() == column.lower():
+                return col
+
+    # Fuzzy match
+        matches = get_close_matches(
+            column,
+            list(df.columns),
+            n=1,
+            cutoff=0.5
+        )
+
+        if matches:
+            return matches[0]
+
+        return None
+
+
+    def has_column(self, df, column):
+
+        return self.match_column(df, column) is not None
+
+
+    def find(
+        self,
+        df,
+        column,
+        value
+    ):
+
+        column = self.match_column(df, column)
+
+        if column is None:
+            return None
+
+        result = df[
+            df[column].astype(str).str.lower()
+            ==
+            str(value).lower()
+        ]
+
+        if result.empty:
+            return None
+
+        return result.iloc[0].to_dict()
+
+
+    def row(
+        self,
+        df,
+        index
+    ):
+
+        return df.iloc[index].to_dict()
+
