@@ -19,7 +19,6 @@ async def handle_update(update: dict):
 
     try:
 
-        # Ignore updates without a message
         if "message" not in update:
             return
 
@@ -28,7 +27,6 @@ async def handle_update(update: dict):
         chat_id = message["chat"]["id"]
         text = message.get("text", "").strip()
 
-        # Ignore empty messages
         if not text:
             return
 
@@ -47,11 +45,13 @@ async def handle_update(update: dict):
         # Agent
         # ---------------------------------------------------------
 
-        logger.log(
-            "agent_started"
-        )
+        logger.log("agent_started")
 
-        answer = await agent.solve(text)
+        # IMPORTANT CHANGE
+        answer = await agent.solve(
+            chat_id=chat_id,
+            question=text
+        )
 
         logger.log(
             "agent_completed",
@@ -59,7 +59,7 @@ async def handle_update(update: dict):
         )
 
         # ---------------------------------------------------------
-        # Build Final Response
+        # Build Response
         # ---------------------------------------------------------
 
         response = build_response(
@@ -68,10 +68,6 @@ async def handle_update(update: dict):
         )
 
         logger.log_response(response)
-
-        # ---------------------------------------------------------
-        # Send Reply
-        # ---------------------------------------------------------
 
         send_message(
             chat_id=chat_id,
@@ -90,12 +86,9 @@ async def handle_update(update: dict):
         )
 
         try:
-
             send_message(
                 chat_id=chat_id,
                 message=error_response
             )
-
         except Exception:
-
             pass
