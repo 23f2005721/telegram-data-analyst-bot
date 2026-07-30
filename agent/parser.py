@@ -72,8 +72,23 @@ class Parser:
 
     def parse(self, question: str) -> ParsedTask:
 
-        task = ParsedTask(question=question)
+        task = ParsedTask(
+            question=question
+        )
 
+        task.operation = "max"
+        task.column = "literacy"
+        task.result_column = "state"
+
+        task.filters = {
+            "year": {
+            "operator": ">=",
+            "value": 2020
+            }
+        }
+
+        task.sort = "desc"
+        task.limit = 5
         q = question.lower()
 
         # ----------------------------
