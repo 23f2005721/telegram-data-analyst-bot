@@ -7,10 +7,10 @@ load_dotenv()
 
 class Config:
     # Telegram
-    BOT_TOKEN = os.getenv("8725034188:AAE2RBuSn2PsDAoz7blzZNF20Xk7ml9QZjc")
+    BOT_TOKEN = os.getenv("BOT_TOKEN")
 
     # LLM API
-    GEMINI_API_KEY = os.getenv("AQ.Ab8RN6JtouKoI9UkjJwp1cLWS93zsgZ0bdFI7MNFRlKSi00KsQ")
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
     # Public URL of your deployed app
     APP_URL = os.getenv("APP_URL")
