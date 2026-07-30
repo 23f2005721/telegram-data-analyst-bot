@@ -22,13 +22,9 @@ class Executor:
     def __init__(self):
 
         self.parser = Parser()
-
         self.search = SearchService()
-
         self.loader = LoaderFactory()
-
         self.dataframe = DataFrameTool()
-
         self.formatter = Formatter()
 
         self.operations = {
@@ -49,7 +45,7 @@ class Executor:
         try:
 
             # -------------------------------------
-            # Save conversation
+            # Save user message
             # -------------------------------------
 
             memory.add_message(
@@ -64,16 +60,19 @@ class Executor:
 
             task = self.parser.parse(question)
 
-            memory.save_task(chat_id, task)
+            memory.save_task(
+                chat_id,
+                task
+            )
 
             # -------------------------------------
-            # Load dataframe from memory
+            # Existing dataframe
             # -------------------------------------
 
             dataframe = memory.get_dataframe(chat_id)
 
             # -------------------------------------
-            # Download dataset from URL
+            # Download from URL
             # -------------------------------------
 
             if task.url:
@@ -87,23 +86,30 @@ class Executor:
 
                 dataframe = self.loader.load(filepath)
 
+                if dataframe is None:
+                    return self.formatter.error(
+                        "Failed to load dataset."
+                    )
+
                 memory.save_dataframe(
                     chat_id,
                     dataframe
                 )
 
             # -------------------------------------
-            # Search dataset if no dataframe exists
+            # Search dataset
             # -------------------------------------
 
             elif dataframe is None:
 
-                result = self.search.search(question)
+                search_result = self.search.search(
+                    task.dataset or question
+                )
 
-                if result["url"]:
+                if search_result and search_result.get("url"):
 
                     filepath = downloader.download(
-                        result["url"]
+                        search_result["url"]
                     )
 
                     memory.save_file(
@@ -112,6 +118,11 @@ class Executor:
                     )
 
                     dataframe = self.loader.load(filepath)
+
+                    if dataframe is None:
+                        return self.formatter.error(
+                            "Failed to load dataset."
+                        )
 
                     memory.save_dataframe(
                         chat_id,
@@ -124,11 +135,29 @@ class Executor:
 
             if dataframe is None:
 
+                answer = await gemini.generate(question)
+
+                memory.add_message(
+                    chat_id,
+                    "assistant",
+                    answer
+                )
+
+                return self.formatter.success(
+                    {
+                        "answer": answer
+                    }
+                )
+
+            # -------------------------------------
+            # No dataframe operation detected
+            # -------------------------------------
+
+            if task.operation is None:
+
                 if task.requires_llm:
 
-                    answer = await gemini.generate(
-                        question
-                    )
+                    answer = await gemini.generate(question)
 
                     memory.add_message(
                         chat_id,
@@ -143,22 +172,14 @@ class Executor:
                     )
 
                 return self.formatter.error(
-                    "No dataset available."
+                    "No operation detected."
                 )
 
             # -------------------------------------
             # Execute dataframe operation
             # -------------------------------------
 
-            if task.operation is None:
-
-                return self.formatter.error(
-                    "No operation detected."
-                )
-
-            func = self.operations.get(
-                task.operation
-            )
+            func = self.operations.get(task.operation)
 
             if func is None:
 
@@ -166,7 +187,6 @@ class Executor:
                     f"Unsupported operation: {task.operation}"
                 )
 
-            # count() has different signature
             if task.operation == "count":
 
                 result = func(dataframe)
@@ -179,10 +199,24 @@ class Executor:
                         "No target column detected."
                     )
 
-                result = func(
-                    dataframe,
-                    task.column
-                )
+                if task.operation in ("max", "min"):
+
+                    result = func(
+                        dataframe,
+                        task.column,
+                        task.result_column
+                    )
+
+                else:
+
+                    result = func(
+                        dataframe,
+                        task.column
+                    )
+
+            # -------------------------------------
+            # Save assistant response
+            # -------------------------------------
 
             memory.add_message(
                 chat_id,
@@ -193,6 +227,12 @@ class Executor:
             return self.formatter.success(result)
 
         except Exception as e:
+
+            memory.add_message(
+                chat_id,
+                "assistant",
+                f"Error: {e}"
+            )
 
             return self.formatter.error(
                 str(e)
