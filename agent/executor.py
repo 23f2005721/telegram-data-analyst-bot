@@ -2,27 +2,17 @@
 executor.py
 
 Main execution pipeline.
-
-Responsibilities:
-- Parse question
-- Restore memory
-- Search/download dataset
-- Load dataset
-- Execute dataframe operations
-- Use Gemini only when required
-- Format final JSON response
 """
 
-from pathlib import Path
+import agent.memory as memory
 
 from agent.parser import Parser
 from agent.formatter import Formatter
-from agent.memory import Memory
 
 from services.search_service import SearchService
-from services.gemini_service import GeminiService
+from services.gemini_service import gemini
 
-from tools.downloader import Downloader
+from tools.downloader import downloader
 from tools.loader_factory import LoaderFactory
 from tools.dataframe import DataFrameTool
 
@@ -32,50 +22,79 @@ class Executor:
     def __init__(self):
 
         self.parser = Parser()
-        self.memory = Memory()
 
         self.search = SearchService()
 
-        self.downloader = Downloader()
         self.loader = LoaderFactory()
 
         self.dataframe = DataFrameTool()
 
-        self.gemini = GeminiService()
-
         self.formatter = Formatter()
 
-    async def execute(self, question: str):
+        self.operations = {
+            "mean": self.dataframe.mean,
+            "median": self.dataframe.median,
+            "sum": self.dataframe.sum,
+            "count": self.dataframe.count,
+            "max": self.dataframe.maximum,
+            "min": self.dataframe.minimum,
+        }
+
+    async def execute(
+        self,
+        chat_id: int,
+        question: str
+    ):
 
         try:
 
-            # -----------------------------
-            # Parse Question
-            # -----------------------------
+            # -------------------------------------
+            # Save conversation
+            # -------------------------------------
+
+            memory.add_message(
+                chat_id,
+                "user",
+                question
+            )
+
+            # -------------------------------------
+            # Parse question
+            # -------------------------------------
 
             task = self.parser.parse(question)
 
-            # -----------------------------
-            # Recover previous dataset
-            # -----------------------------
+            memory.save_task(chat_id, task)
 
-            dataframe = self.memory.get_dataframe()
+            # -------------------------------------
+            # Load dataframe from memory
+            # -------------------------------------
 
-            # -----------------------------
-            # Download dataset if URL exists
-            # -----------------------------
+            dataframe = memory.get_dataframe(chat_id)
+
+            # -------------------------------------
+            # Download dataset from URL
+            # -------------------------------------
 
             if task.url:
 
-                filepath = await self.downloader.download(task.url)
+                filepath = downloader.download(task.url)
+
+                memory.save_file(
+                    chat_id,
+                    str(filepath)
+                )
 
                 dataframe = self.loader.load(filepath)
 
-                self.memory.save_dataframe(dataframe)
+                memory.save_dataframe(
+                    chat_id,
+                    dataframe
+                )
 
-            # -----------------------------
-            # Search dataset if needed
-            # -----------------------------
+            # -------------------------------------
+            # Search dataset if no dataframe exists
+            # -------------------------------------
 
             elif dataframe is None:
 
@@ -83,23 +102,39 @@ class Executor:
 
                 if result["url"]:
 
-                    filepath = await self.downloader.download(
+                    filepath = downloader.download(
                         result["url"]
+                    )
+
+                    memory.save_file(
+                        chat_id,
+                        str(filepath)
                     )
 
                     dataframe = self.loader.load(filepath)
 
-                    self.memory.save_dataframe(dataframe)
+                    memory.save_dataframe(
+                        chat_id,
+                        dataframe
+                    )
 
-            # -----------------------------
-            # Still no dataframe
-            # -----------------------------
+            # -------------------------------------
+            # No dataframe available
+            # -------------------------------------
 
             if dataframe is None:
 
                 if task.requires_llm:
 
-                    answer = await self.gemini.generate(question)
+                    answer = await gemini.generate(
+                        question
+                    )
+
+                    memory.add_message(
+                        chat_id,
+                        "assistant",
+                        answer
+                    )
 
                     return self.formatter.success(
                         {
@@ -111,43 +146,54 @@ class Executor:
                     "No dataset available."
                 )
 
-            # -----------------------------
+            # -------------------------------------
             # Execute dataframe operation
-            # -----------------------------
+            # -------------------------------------
 
-            result = self.run_dataframe_operation(
-                dataframe,
-                task
+            if task.operation is None:
+
+                return self.formatter.error(
+                    "No operation detected."
+                )
+
+            func = self.operations.get(
+                task.operation
+            )
+
+            if func is None:
+
+                return self.formatter.error(
+                    f"Unsupported operation: {task.operation}"
+                )
+
+            # count() has different signature
+            if task.operation == "count":
+
+                result = func(dataframe)
+
+            else:
+
+                if task.column is None:
+
+                    return self.formatter.error(
+                        "No target column detected."
+                    )
+
+                result = func(
+                    dataframe,
+                    task.column
+                )
+
+            memory.add_message(
+                chat_id,
+                "assistant",
+                str(result)
             )
 
             return self.formatter.success(result)
 
         except Exception as e:
 
-            return self.formatter.error(str(e))
-
-    def run_dataframe_operation(self, df, task):
-
-        operation = task.operation
-
-        if operation == "mean":
-            return self.dataframe.mean(df, task.column)
-
-        if operation == "median":
-            return self.dataframe.median(df, task.column)
-
-        if operation == "sum":
-            return self.dataframe.sum(df, task.column)
-
-        if operation == "count":
-            return self.dataframe.count(df)
-
-        if operation == "max":
-            return self.dataframe.maximum(df, task.column)
-
-        if operation == "min":
-            return self.dataframe.minimum(df, task.column)
-
-        raise ValueError(
-            f"Unsupported operation: {operation}"
-        )
+            return self.formatter.error(
+                str(e)
+            )
